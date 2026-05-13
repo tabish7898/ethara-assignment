@@ -1,0 +1,133 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // 0. Default Deny
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    // Primitives
+    function isSignedIn() { return request.auth != null; }
+    function isOwner(userId) { return isSignedIn() && request.auth.uid == userId; }
+    function incoming() { return request.resource.data; }
+    function existing() { return resource.data; }
+    function isValidId(id) { return id is string && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$'); }
+    
+    // Global Admin Check - Lookup role in user document
+    function isGlobalAdmin() {
+      // Use get() to check user's role. Note: This assumes the user document exists.
+      return isSignedIn() && 
+             get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'ADMIN';
+    }
+
+    // Project Membership Pointers
+    function isProjectMember(projectId) {
+      return isSignedIn() && (
+        exists(/databases/$(database)/documents/projects/$(projectId)/members/$(request.auth.uid)) ||
+        get(/databases/$(database)/documents/projects/$(projectId)).data.ownerId == request.auth.uid
+      );
+    }
+    
+    function getProjectMember(projectId) {
+      return get(/databases/$(database)/documents/projects/$(projectId)/members/$(request.auth.uid)).data;
+    }
+    
+    function isProjectAdmin(projectId) {
+      // Admins are either project owners or users with ADMIN role in members collection
+      return isGlobalAdmin() || 
+             (isProjectMember(projectId) && getProjectMember(projectId).role == 'ADMIN');
+    }
+
+    // --- Users ---
+    match /users/{userId} {
+      function isValidUser(data) {
+        return data.keys().hasAll(['email', 'displayName', 'role']) &&
+               data.email is string && data.email.size() <= 128 &&
+               data.displayName is string && data.displayName.size() <= 64 &&
+               data.role in ['ADMIN', 'MEMBER'];
+      }
+      
+      allow get: if isSignedIn();
+      allow list: if isSignedIn(); // For inviting members
+      allow create: if isSignedIn() && isOwner(userId) && isValidUser(incoming()) && incoming().role == 'MEMBER';
+      allow update: if (isOwner(userId) || isGlobalAdmin()) && isValidUser(incoming()) && (
+        (isGlobalAdmin() && incoming().diff(existing()).affectedKeys().hasOnly(['role', 'displayName', 'photoURL'])) ||
+        (isOwner(userId) && incoming().diff(existing()).affectedKeys().hasOnly(['displayName', 'photoURL']) && incoming().role == existing().role)
+      );
+    }
+
+    // --- Projects ---
+    match /projects/{projectId} {
+      function isValidProject(data) {
+        return data.keys().hasAll(['name', 'priority', 'status', 'ownerId']) &&
+               data.name is string && data.name.size() > 0 && data.name.size() <= 128 &&
+               data.priority in ['LOW', 'MEDIUM', 'HIGH'] &&
+               data.status in ['ACTIVE', 'COMPLETED', 'ARCHIVED'] &&
+               isValidId(data.ownerId);
+      }
+
+      // Read access: Global Admins, Project Owners, or Project Members
+      allow get: if isGlobalAdmin() || 
+                    resource.data.ownerId == request.auth.uid ||
+                    isProjectMember(projectId);
+      
+      // List access: Enforce ownerId check for listing to avoid expensive O(n) lookups
+      allow list: if isSignedIn() && (
+        isGlobalAdmin() || 
+        resource.data.ownerId == request.auth.uid
+      );
+      
+      allow create: if isSignedIn() && isValidProject(incoming()) && 
+                    incoming().ownerId == request.auth.uid &&
+                    incoming().createdAt == request.time;
+      
+      allow update: if (isProjectAdmin(projectId)) && isValidProject(incoming()) &&
+                    incoming().ownerId == existing().ownerId &&
+                    incoming().updatedAt == request.time && (
+                      incoming().diff(existing()).affectedKeys().hasOnly(['name', 'description', 'deadline', 'priority', 'status', 'updatedAt'])
+                    );
+      
+      allow delete: if isGlobalAdmin() || (isSignedIn() && existing().ownerId == request.auth.uid);
+
+      // --- Project Subcollections ---
+      
+      match /members/{memberId} {
+        function isValidMember(data) {
+          return data.keys().hasAll(['userId', 'role']) &&
+                 isValidId(data.userId) &&
+                 data.role in ['ADMIN', 'MEMBER'];
+        }
+
+        allow read: if isProjectMember(projectId) || isGlobalAdmin();
+        allow create: if (isProjectAdmin(projectId) || get(/databases/$(database)/documents/projects/$(projectId)).data.ownerId == request.auth.uid) && isValidMember(incoming());
+        allow update: if isProjectAdmin(projectId) && isValidMember(incoming()) &&
+                      incoming().diff(existing()).affectedKeys().hasOnly(['role']);
+        allow delete: if isProjectAdmin(projectId) && memberId != request.auth.uid;
+      }
+
+      match /tasks/{taskId} {
+        function isValidTask(data) {
+          return data.keys().hasAll(['title', 'priority', 'status', 'projectId']) &&
+                 data.title is string && data.title.size() <= 200 &&
+                 data.priority in ['LOW', 'MEDIUM', 'HIGH'] &&
+                 data.status in ['TODO', 'IN_PROGRESS', 'COMPLETED'] &&
+                 data.projectId == projectId;
+        }
+
+        allow read: if isProjectMember(projectId) || isGlobalAdmin();
+        allow create: if isProjectMember(projectId) && isValidTask(incoming()) && incoming().createdAt == request.time;
+        allow update: if (isProjectMember(projectId) || isGlobalAdmin()) && isValidTask(incoming()) &&
+                      incoming().projectId == existing().projectId &&
+                      incoming().updatedAt == request.time && (
+                        incoming().diff(existing()).affectedKeys().hasOnly(['title', 'description', 'priority', 'dueDate', 'status', 'assigneeId', 'updatedAt'])
+                      );
+        allow delete: if isProjectAdmin(projectId);
+      }
+
+      match /activity/{activityId} {
+        allow read: if isProjectMember(projectId) || isGlobalAdmin();
+        allow create: if isProjectMember(projectId) && incoming().userId == request.auth.uid && incoming().timestamp == request.time;
+      }
+    }
+  }
+}
