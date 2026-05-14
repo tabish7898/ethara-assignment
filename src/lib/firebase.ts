@@ -4,8 +4,7 @@ import {
   initializeFirestore, 
   doc, 
   getDocFromServer,
-  persistentLocalCache,
-  persistentMultipleTabManager
+  memoryLocalCache,
 } from "firebase/firestore";
 import firebaseConfig from "@/firebase-applet-config.json";
 
@@ -14,23 +13,24 @@ export const auth = getAuth(app);
 
 // Use initializeFirestore to enable more robust connection settings
 export const db = initializeFirestore(app, {
-  localCache: persistentLocalCache({ tabManager: persistentMultipleTabManager() }),
-  experimentalForceLongPolling: true, // This can help in certain proxy/iframe environments
+  localCache: memoryLocalCache(),
+  // Force long polling to bypass potential proxy/WebSocket issues in the preview environment
+  experimentalForceLongPolling: true,
 }, firebaseConfig.firestoreDatabaseId);
 
 // Test Connection
 async function testConnection() {
   try {
     // Try to fetch a doc from server to check connectivity
-    await getDocFromServer(doc(db, "test", "connection"));
+    await getDocFromServer(doc(db, "_test_connection_", "ping"));
+    console.log("Firebase Connection: Direct server contact successful.");
   } catch (error: any) {
-    // Permission denied is GOOD - it means we reached the server and rules blocked us
     if (error.code === "permission-denied") {
-      console.log("Firebase Connection: Verified (Security Rules Active)");
-    } else if (error.code === "unavailable") {
-      console.warn("Firebase Connection: Backend unavailable or initializing.");
+      console.log("Firebase Connection: Server reached, but access denied (Security rules are active).");
+    } else if (error.code === "unavailable" || error.message?.includes("offline")) {
+      console.error("Firebase Connection ERROR: Backend is not reachable. This often means the client is truly offline, or the Firebase project config is invalid, or the database is still initializing.");
     } else {
-      console.error("Firebase Connection: Unexpected error", error.code);
+      console.error("Firebase Connection: Unexpected status code:", error.code, "-", error.message);
     }
   }
 }

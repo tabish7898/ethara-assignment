@@ -8,6 +8,7 @@ import {
 } from "firebase/auth";
 import { doc, getDoc, setDoc, serverTimestamp } from "firebase/firestore";
 import { auth, db } from "@/src/lib/firebase";
+import { handleFirestoreError, OperationType } from "@/src/lib/error-handler";
 
 interface UserProfile {
   uid: string;
@@ -39,7 +40,13 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         if (user) {
           // Fetch or create profile
           const userDocRef = doc(db, "users", user.uid);
-          const userDoc = await getDoc(userDocRef);
+          let userDoc;
+          try {
+            userDoc = await getDoc(userDocRef);
+          } catch (err) {
+            handleFirestoreError(err, OperationType.GET, `users/${user.uid}`);
+            return;
+          }
           
           if (!userDoc.exists()) {
             const newProfile: UserProfile = {
@@ -71,8 +78,19 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   }, []);
 
   const login = async () => {
-    const provider = new GoogleAuthProvider();
-    await signInWithPopup(auth, provider);
+    try {
+      const provider = new GoogleAuthProvider();
+      await signInWithPopup(auth, provider);
+    } catch (error: any) {
+      console.error("AuthContext - Login Error:", error);
+      // We throw the error so the UI can catch it if needed, 
+      // but we log specifically for debugging.
+      if (error.code === 'auth/unauthorized-domain') {
+        console.error("DOMAIN ERROR: The current domain is not authorized in your Firebase Project.");
+        console.error("Action Required: Add your domain to the Authorized Domains list in the Firebase Console (Authentication > Settings > Authorized domains).");
+      }
+      throw error;
+    }
   };
 
   const logout = async () => {

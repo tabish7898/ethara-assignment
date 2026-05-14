@@ -1,10 +1,10 @@
 {
-  "projectId": "ai-studio-applet-webapp-307cf",
-  "appId": "1:415322359828:web:41330902f4fd15aaabff01",
-  "apiKey": "AIzaSyDenxckWcFpdfJw0jBvgMhbfLUqz3plHaY",
-  "authDomain": "ai-studio-applet-webapp-307cf.firebaseapp.com",
-  "firestoreDatabaseId": "ai-studio-b4d29d5e-4314-4d7d-8891-a46cc12c9264",
-  "storageBucket": "ai-studio-applet-webapp-307cf.firebasestorage.app",
-  "messagingSenderId": "415322359828",
-  "measurementId": ""
+  "projectId": "proflow-e2859",
+  "appId": "1:918826081833:web:b4ec4d31480aaffdf50638",
+  "apiKey": "AIzaSyCdH9v322fnS9sU1gjLJB6Ea1x8zpwaYm0",
+  "authDomain": "proflow-e2859.firebaseapp.com",
+  "firestoreDatabaseId": "(default)",
+  "storageBucket": "proflow-e2859.firebasestorage.app",
+  "messagingSenderId": "918826081833",
+  "measurementId": "G-26C0QNX8JV"
 }

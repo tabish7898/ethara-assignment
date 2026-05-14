@@ -98,7 +98,7 @@ export default function ProjectDetails() {
       collection(db, `projects/${projectId}/tasks`),
       orderBy("createdAt", "desc")
     );
-    const unsubscribeTasks = onSnapshot(qTasks, (snapshot) => {
+    const unsubscribeTasks = onSnapshot(qTasks, { includeMetadataChanges: true }, (snapshot) => {
       const taskList = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
       setTasks(taskList);
       setLoading(false);
@@ -108,7 +108,7 @@ export default function ProjectDetails() {
 
     // Real-time Members
     const qMembers = query(collection(db, `projects/${projectId}/members`));
-    const unsubscribeMembers = onSnapshot(qMembers, (snapshot) => {
+    const unsubscribeMembers = onSnapshot(qMembers, { includeMetadataChanges: true }, (snapshot) => {
       setMembers(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })));
     });
 
